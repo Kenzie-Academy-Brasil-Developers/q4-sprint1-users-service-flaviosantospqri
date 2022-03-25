@@ -50,6 +50,13 @@ const createLoginShape = yup.object().shape({
   password: yup.string().required(),
 });
 
+const createUpdateShape = yup.object().shape({
+  password: yup
+    .string()
+    .required()
+    .transform((psw) => bcrypt.hashSync(psw, 10)),
+});
+
 //------midlewares---------
 
 const validateToken = (req, res, next) => {
@@ -161,15 +168,23 @@ app.post(
   }
 );
 
-app.put("/users/:uuid/password", validateToken, verifyUuid, (req, res) => {
-  const user = req.user;
-  const username = req.username;
+app.put(
+  "/users/:uuid/password",
+  validateShape(createUpdateShape),
+  validateToken,
+  verifyUuid,
+  (req, res) => {
+    const user = req.user;
+    const username = req.username;
+    const newPassword = bcrypt.hashSync(req.body.password, 10);
 
-  if (user.username != username) {
-    return res.status(403).json({ message: "invalid user" });
+    if (user.username != username) {
+      return res.status(403).json({ message: "invalid user" });
+    }
+
+    user.password = newPassword;
+
+    return res.status(204).json();
   }
-  user.password = req.body.password;
-
-  return res.status(204).json();
-});
+);
 app.listen(3000, () => console.log("running in port 3000"));
