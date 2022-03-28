@@ -1,6 +1,6 @@
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
-import bcrypt from "bcrypt";
+import * as bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import * as yup from "yup";
 import dotenv from "dotenv";
@@ -24,7 +24,7 @@ class User {
     this.age = age;
     this.username = username;
     this.email = email;
-    this.password = bcrypt.hashSync(password, 10);
+    this.password = password;
     this.createdOn = new Date();
   }
 }
@@ -46,7 +46,7 @@ const createUserShape = yup.object().shape({
 });
 
 const createLoginShape = yup.object().shape({
-  email: yup.string().email().required(),
+  username: yup.string().required(),
   password: yup.string().required(),
 });
 
@@ -97,28 +97,20 @@ const verifyUuid = async (req, res, next) => {
   return next();
 };
 
-const verifyPassword = (req, res, next) => {
-  const { password } = req.body;
+const verifyUsernameExists = async (req, res, next) => {
+  const { username } = req.body;
 
-  if (password != req.validated.password) {
-    return res.status(401).json({ message: "invalid password" });
-  }
-  return next();
-};
+  const user = await users.find((person) => person.username == username);
 
-const verifyEmailExists = async (req, res, next) => {
-  const { email } = req.body;
-
-  const user = await users.find((person) => person.email == email);
   if (!user) {
-    return res.status(404).json({ message: "not exists" });
+    return res.status(404).json({ message: " user not exists" });
   }
   req.user = user;
   return next();
 };
 
 const verifyUserExists = async (req, res, next) => {
-  const { email } = req.body;
+  const { email, username } = req.body;
 
   const user = await users.find((person) => person.email == email);
 
@@ -152,18 +144,23 @@ app.post(
 app.get("/users", validateToken, (_, res) => {
   return res.status(200).json(users);
 });
+
 app.post(
   "/login",
   validateShape(createLoginShape),
-  verifyEmailExists,
-  verifyPassword,
-  (req, res) => {
-    const { username } = req.user;
+  verifyUsernameExists,
+  async (req, res) => {
+    const { password, username } = req.body;
+    const password_user = req.user.password;
+
+    const match = await bcrypt.compare(password, password_user);
 
     const token = jwt.sign({ username }, config.secret, {
       expiresIn: config.expiresIn,
     });
-
+    if (!match) {
+      return res.status(401).json({ message: "invalid password" });
+    }
     res.status(200).json({ token: token });
   }
 );
@@ -179,7 +176,12 @@ app.put(
     const newPassword = bcrypt.hashSync(req.body.password, 10);
 
     if (user.username != username) {
-      return res.status(403).json({ message: "invalid user" });
+      return res
+        .status(403)
+        .json({
+          message:
+            "Unable to complete this update using this profile, PERMISSION DENIED! ",
+        });
     }
 
     user.password = newPassword;
